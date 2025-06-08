@@ -82,25 +82,52 @@ class FFT
      * a span of (2^s)/2.  The twiddle factors are nth roots of unity where n = 2^s.
      */
     private function doFFT(a:Array<Complex>) {
-        var half:Int = 1;                   // (2^s)/2
-        var inv = Std.int(a.length / 2);    // N/(2^s)
+        var half:Int = 1;
+        var inv:Int = Std.int(a.length / 2);
 
-        // loop through steps
+        var even:Complex = new Complex(0, 0);
+        var odd:Complex = new Complex(0, 0);
+        var evenOriginal:Complex = new Complex(0, 0);
+
         while (inv > 0) {
-            // loop through groups
             var g:Int = 0;
+
             while (g < a.length) {
-                // loop through butterflies
                 var b:Int = 0;
                 var r:Int = 0;
+
                 while (b < half) {
-                    var even = a[g + b];
-                    var odd = roots[r] * a[g + half + b];
-                    a[g + b] = even + odd;
-                    a[g + half + b] = even - odd;
+                    even.real = a[g + b].real;
+                    even.imag = a[g + b].imag;
+
+                    var valRe = a[g + half + b].real;
+                    var valIm = a[g + half + b].imag;
+
+                    var rootRe = roots[r].real;
+                    var rootIm = roots[r].imag;
+
+                    odd.real = rootRe * valRe - rootIm * valIm;
+                    odd.imag = rootRe * valIm + rootIm * valRe;
+
+                    evenOriginal.real = even.real;
+                    evenOriginal.imag = even.imag;
+
+                    even.real += odd.real;
+                    even.imag += odd.imag;
+
+                    a[g + b].real = even.real;
+                    a[g + b].imag = even.imag;
+
+                    evenOriginal.real -= odd.real;
+                    evenOriginal.imag -= odd.imag;
+
+                    a[g + half + b].real = evenOriginal.real;
+                    a[g + half + b].imag = evenOriginal.imag;
+
                     b++;
                     r += inv;
                 }
+
                 g += half << 1;
             }
 
@@ -108,6 +135,7 @@ class FFT
             inv >>= 1;
         }
     }
+
 
     // Input is N=512 PCM samples.
     // Output is intensity of frequencies from 1 to N/2=256.
