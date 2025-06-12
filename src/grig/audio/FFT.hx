@@ -70,8 +70,6 @@ class FFT
         // Generate bit reversal table
         for (i in 0...n)
             reversed[i] = bitReverse(i);
-        for (i in 0...Std.int(n / 2))
-            roots[i] = Complex.exp(new Complex(0, i * (TWO_PI / n)));
     }
 
     /**
