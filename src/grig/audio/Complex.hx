@@ -150,6 +150,50 @@ abstract Complex(ComplexType) from ComplexType to ComplexType
         return this.real == z.real && this.imag == z.imag;
     }
 
+		inline public function addInPlace(z:Complex):Void
+			{
+				this.real += z.real;
+				this.imag += z.imag;
+			}
+
+			/**
+			 * In-place subtraction - modifies this complex number
+			 */
+			inline public function subInPlace(z:Complex):Void
+			{
+				this.real -= z.real;
+				this.imag -= z.imag;
+			}
+
+			/**
+			 * In-place multiplication - modifies this complex number
+			 */
+			inline public function mulInPlace(z:Complex):Void
+			{
+				var newReal = this.real * z.real - this.imag * z.imag;
+				var newImag = this.real * z.imag + this.imag * z.real;
+				this.real = newReal;
+				this.imag = newImag;
+			}
+
+			/**
+			 * Set real and imaginary parts directly
+			 */
+			inline public function set(real:Float, imag:Float):Void
+			{
+				this.real = real;
+				this.imag = imag;
+			}
+
+			/**
+			 * Copy values from another complex number
+			 */
+			inline public function copyFrom(z:Complex):Void
+			{
+				this.real = z.real;
+				this.imag = z.imag;
+			}
+
 	/**
 		Constructs a complex number from magnitude and phase angle
 	**/
