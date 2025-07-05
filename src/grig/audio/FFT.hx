@@ -7,7 +7,8 @@ class FFT
     private static final TWO_PI:Float = 6.2831853;
 
     // Pre-allocated working vectors - reused across all FFT calls
-    private var hamming:Vector<Float>;
+    // TODO: Implement configurable windowing (Hamming, Blackman, Hann, etc.)
+    private var windowTables:Vector<Float>;
     private var reversed:Vector<Int>;
     private var twiddleReal:Vector<Float>;
     private var twiddleImag:Vector<Float>;
@@ -21,13 +22,28 @@ class FFT
 
     private var n:Int;
     private var logN:Int;
+    
+    // Prime factorization of N (radix sequence)
+    private var radixFactors:Vector<Int>;
+    private var numFactors:Int;
 
     public function new(n:Int = 512) {
-        this.n = n;
-        logN = Std.int(log(2.0, n));
+        // Round to nearest valid FFT size if needed
+        var validN = roundToNearestPowerOf2(n);
+        if (validN != n) {
+            trace('Warning: FFT size $n is not a power of 2. Rounded to $validN');
+        }
+        
+        this.n = validN;
+        logN = Std.int(log(2.0, validN));
+
+        // Validate and factorize N (should always succeed now)
+        if (!validateAndFactorize(validN)) {
+            throw "Internal error: failed to factorize rounded FFT size";
+        }
 
         // Allocate all vectors once during construction
-        hamming = new Vector<Float>(n);
+        windowTables = new Vector<Float>(n);
         reversed = new Vector<Int>(n);
         twiddleReal = new Vector<Float>(n);
         twiddleImag = new Vector<Float>(n);
@@ -42,6 +58,23 @@ class FFT
 
     public static function log(base:Float, x:Float):Float {
         return Math.log(x) / Math.log(base);
+    }
+
+    private static function roundToNearestPowerOf2(n:Int):Int {
+        if (n <= 0) return 1;
+        if ((n & (n - 1)) == 0) return n; // Already power of 2
+        
+        // Find next power of 2
+        var nextPow2 = 1;
+        while (nextPow2 < n) {
+            nextPow2 <<= 1;
+        }
+        
+        // Find previous power of 2
+        var prevPow2 = nextPow2 >> 1;
+        
+        // Return closest one
+        return (n - prevPow2) < (nextPow2 - n) ? prevPow2 : nextPow2;
     }
 
     @:generic
@@ -63,13 +96,27 @@ class FFT
     }
 
     private function generateTables() {
-        // Generate Hamming window
-        for (i in 0...n)
-            hamming[i] = 1 - 0.85 * Math.cos(i * (TWO_PI / n));
+        // Generate Blackman window (matches Web Audio API AnalyzerNode)
+        generateBlackmanWindow();
 
         // Generate bit reversal table
         for (i in 0...n)
             reversed[i] = bitReverse(i);
+
+        // Generate twiddle factors
+        for (i in 0...n) {
+            var angle = -TWO_PI * i / n;
+            twiddleReal[i] = Math.cos(angle);
+            twiddleImag[i] = Math.sin(angle);
+        }
+    }
+
+    private function generateBlackmanWindow() {
+        // Blackman window: w[n] = 0.42 - 0.5*cos(2πn/N) + 0.08*cos(4πn/N)
+        for (i in 0...n) {
+            var factor = i / (n - 1);
+            windowTables[i] = 0.42 - 0.5 * Math.cos(TWO_PI * factor) + 0.08 * Math.cos(4 * Math.PI * factor);
+        }
     }
 
     /**
@@ -169,26 +216,59 @@ class FFT
     }
 
     /**
-     * Mixed-radix implementation for when N is not a pure power of 4
+     * Validates N and computes prime factorization into radix-2 and radix-4 components
      */
-    private function doFFTMixedRadix() {
-        // Apply all possible radix-4 stages first
-        var currentSize = 4;
-        while (currentSize <= n && (n % currentSize) == 0) {
-            applyRadix4Stage(currentSize);
-            currentSize *= 4;
+    private function validateAndFactorize(n:Int):Bool {
+        if (n <= 0 || (n & (n - 1)) != 0) {
+            return false; // N must be power of 2
         }
 
-        // Apply remaining radix-2 stages
-        currentSize = 2;
-        while (currentSize <= n) {
-            if ((n % currentSize) == 0) {
-                var stageN = Std.int(n / currentSize);
-                if ((stageN % 2) == 1) {  // Only if this stage is needed
-                    applyRadix2Stage(currentSize);
-                }
+        // Compute factorization: prefer radix-4 over radix-2
+        var factors = new Array<Int>();
+        var remaining = n;
+        
+        // Factor out as many radix-4 stages as possible
+        while (remaining % 4 == 0) {
+            factors.push(4);
+            remaining = Std.int(remaining / 4);
+        }
+        
+        // Factor out remaining radix-2 stages
+        while (remaining % 2 == 0) {
+            factors.push(2);
+            remaining = Std.int(remaining / 2);
+        }
+        
+        if (remaining != 1) {
+            return false; // N has factors other than 2 and 4
+        }
+        
+        // Store factorization for use in FFT computation
+        numFactors = factors.length;
+        radixFactors = new Vector<Int>(numFactors);
+        for (i in 0...numFactors) {
+            radixFactors[i] = factors[i];
+        }
+        
+        return true;
+    }
+
+    /**
+     * Proper mixed-radix FFT implementation with correct stage ordering
+     */
+    private function doFFTMixedRadix() {
+        var currentSize = 1;
+        
+        // Apply stages in correct order based on factorization
+        for (stage in 0...numFactors) {
+            var radix = radixFactors[stage];
+            currentSize *= radix;
+            
+            if (radix == 4) {
+                applyRadix4Stage(currentSize);
+            } else if (radix == 2) {
+                applyRadix2Stage(currentSize);
             }
-            currentSize *= 2;
         }
     }
 
@@ -268,9 +348,11 @@ class FFT
      * High-performance version that returns Vector directly
      */
     public function calcFreqVector(data:Array<Float>):Vector<Float> {
+        var dataLength = data.length;
         for (i in 0...n) {
             var reversedIdx = reversed[i];
-            workingReal[reversedIdx] = data[i] * hamming[i];
+            var inputValue = (i < dataLength) ? data[i] : 0.0;
+            workingReal[reversedIdx] = inputValue * windowTables[i];
             workingImag[reversedIdx] = 0.0;
         }
 
@@ -283,15 +365,17 @@ class FFT
         var halfN = Std.int(n / 2);
         var invN = 1.0 / n;
 
-        for (i in 0...halfN - 1) {
-            var real = workingReal[1 + i];
-            var imag = workingImag[1 + i];
-            outputFreq[i] = 2 * Math.sqrt(real * real + imag * imag) * invN;
+        for (i in 0...halfN) {
+            var real = workingReal[i];
+            var imag = workingImag[i];
+            if (i == 0) {
+                // DC component (real-only)
+                outputFreq[i] = Math.sqrt(real * real + imag * imag) * invN;
+            } else {
+                // Other frequency components (multiply by 2 for single-sided spectrum)
+                outputFreq[i] = 2 * Math.sqrt(real * real + imag * imag) * invN;
+            }
         }
-
-        var nyquistReal = workingReal[halfN];
-        var nyquistImag = workingImag[halfN];
-        outputFreq[halfN - 1] = Math.sqrt(nyquistReal * nyquistReal + nyquistImag * nyquistImag) * invN;
 
         return outputFreq;
     }
