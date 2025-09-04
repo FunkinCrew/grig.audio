@@ -64,13 +64,14 @@ class FFTVisualization
 
     public function new() {}
 
-    public function makeLogGraph(freq:Array<Float>, bands:Int, dbRange:Int, intRange:Int):Array<Int> {
+    public function makeLogGraph(freq:Array<Float>, bands:Int, dbRange:Int, intRange:Int, ?graph:Array<Int>):Array<Int> {
         // conversion table for the x-axis
         if (xscale.length != bands + 1) {
             xscale = computeLogXScale(bands);
         }
 
-        var graph = new Array<Int>();
+        if (graph == null)
+            graph = new Array<Int>();
         graph.resize(bands);
         for (i in 0...bands) {
             var val:Float = computeFreqBand(freq, xscale, i, bands);
