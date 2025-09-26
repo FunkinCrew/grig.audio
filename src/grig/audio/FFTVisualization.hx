@@ -21,10 +21,9 @@ package grig.audio;
 
 class FFTVisualization
 {
-    private var xscale = new Array<Float>();
+    private static var xscale = new Array<Float>();
 
     private static function computeLogXScale(bands:Int):Array<Float> {
-        var xscale = new Array<Float>();
         xscale.resize(bands + 1);
         xscale[bands] = 0.0;
         for (i in 0...bands)

@@ -75,7 +75,7 @@ class FFT
             roots[i] = Complex.exp(new Complex(0, i * (TWO_PI / n)));
     }
 
-    /* 
+    /*
      * Perform the DFT using the Cooley-Tukey algorithm.  At each step s, where
      * s=1..log N (base 2), there are N/(2^s) groups of intertwined butterfly
      * operations.  Each group contains (2^s)/2 butterflies, and each butterfly has
@@ -109,29 +109,30 @@ class FFT
         }
     }
 
+    private var _calculatedFreq:Array<Float> = new Array<Float>();
+    private var _freqBuffer:Array<Complex> = new Array<Complex>();
+
     // Input is N=512 PCM samples.
     // Output is intensity of frequencies from 1 to N/2=256.
     public function calcFreq(data:Array<Float>):Array<Float> {
         // input is filtered by a Hamming window
         // input values are in bit-reversed order
-        var a = new Array<Complex>();
-        var freq = new Array<Float>();
-        a.resize(n);
-        freq.resize(Std.int(n / 2));
-        for (i in 0...a.length)
-            a[reversed[i]] = { real: data[i] * hamming[i], imag: 0.0 };
+        _freqBuffer.resize(n);
+        _calculatedFreq.resize(Std.int(n / 2));
+        for (i in 0..._freqBuffer.length)
+            _freqBuffer[reversed[i]] = { real: data[i] * hamming[i], imag: 0.0 };
 
-        doFFT(a);
-        // trace('${a[30]} ${a[100]}');
+        doFFT(_freqBuffer);
+        // trace('${_freqBuffer[30]} ${_freqBuffer[100]}');
 
         // output values are divided by N
         // frequencies from 1 to N/2-1 are doubled
         for (i in 0...Std.int(n/2))
-            freq[i] = 2 * Complex.abs(a[1 + i]) / n;
+            _calculatedFreq[i] = 2 * Complex.abs(_freqBuffer[1 + i]) / n;
 
         // frequency N/2 is not doubled
-        freq[Std.int(n / 2) - 1] = Complex.abs(a[Std.int(n / 2)]) / n;
+        _calculatedFreq[Std.int(n / 2) - 1] = Complex.abs(_freqBuffer[Std.int(n / 2)]) / n;
 
-        return freq;
+        return _calculatedFreq;
     }
 }
