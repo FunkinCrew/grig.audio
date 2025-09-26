@@ -28,16 +28,37 @@ class FFT
     private var hamming = new Array<Float>();   // hamming window, scaled to sum to 1
     private var reversed = new Array<Int>();    // bit-reversal table
     private var roots = new Array<Complex>();   // N-th roots of unity
+
+    private var workingArray = new Array<Complex>();
+    private var outputFreq = new Array<Float>();
+
+    private var realArray = new Array<Float>();
+    private var imagArray = new Array<Float>();
+
     private var n:Int;
     private var logN:Int;
 
     public function new(n:Int = 512) {
+        this.n = n;
+        logN = Std.int(log(2.0, n));
+
+        // Pre-allocate all arrays
         hamming.resize(n);
         reversed.resize(n);
         roots.resize(Std.int(n / 2));
+        workingArray.resize(n);
+        outputFreq.resize(Std.int(n / 2));
 
-        this.n = n;
-        logN = Std.int(log(2.0, n));
+        realArray.resize(n);
+        imagArray.resize(n);
+
+        // Pre-allocate Complex objects in working array
+        for (i in 0...n) {
+            workingArray[i] = new Complex(0.0, 0.0);
+            realArray[i] = 0.0;
+            imagArray[i] = 0.0;
+        }
+
         generateTables();
     }
 
@@ -82,25 +103,42 @@ class FFT
      * a span of (2^s)/2.  The twiddle factors are nth roots of unity where n = 2^s.
      */
     private function doFFT(a:Array<Complex>) {
-        var half:Int = 1;                   // (2^s)/2
-        var inv = Std.int(a.length / 2);    // N/(2^s)
+        var half:Int = 1;
+        var inv = Std.int(a.length / 2);
 
-        // loop through steps
         while (inv > 0) {
-            // loop through groups
             var g:Int = 0;
+
             while (g < a.length) {
-                // loop through butterflies
                 var b:Int = 0;
                 var r:Int = 0;
+
                 while (b < half) {
-                    var even = a[g + b];
-                    var odd = roots[r] * a[g + half + b];
-                    a[g + b] = even + odd;
-                    a[g + half + b] = even - odd;
+                    var evenIdx = g + b;
+                    var oddIdx = g + half + b;
+
+                    // Cache the even value
+                    var evenReal = a[evenIdx].real;
+                    var evenImag = a[evenIdx].imag;
+
+                    // Calculate odd * root in-place to avoid allocation
+                    var rootReal = roots[r].real;
+                    var rootImag = roots[r].imag;
+                    var oddReal = a[oddIdx].real;
+                    var oddImag = a[oddIdx].imag;
+
+                    // Multiply odd by root
+                    var tempReal = oddReal * rootReal - oddImag * rootImag;
+                    var tempImag = oddReal * rootImag + oddImag * rootReal;
+
+                    // Butterfly operation - modify in place
+                    a[evenIdx].set(evenReal + tempReal, evenImag + tempImag);
+                    a[oddIdx].set(evenReal - tempReal, evenImag - tempImag);
+
                     b++;
                     r += inv;
                 }
+
                 g += half << 1;
             }
 
@@ -109,30 +147,74 @@ class FFT
         }
     }
 
-    private var _calculatedFreq:Array<Float> = new Array<Float>();
-    private var _freqBuffer:Array<Complex> = new Array<Complex>();
+    private function doFFTSeparate(real:Array<Float>, imag:Array<Float>) {
+        var half:Int = 1;
+        var inv = Std.int(n / 2);
+
+        while (inv > 0) {
+            for (g in 0...n) {
+                if (g % (half << 1) != 0) continue;
+
+                for (b in 0...half) {
+                    var evenIdx = g + b;
+                    var oddIdx = g + half + b;
+                    var rootIdx = b * inv;
+
+                    // Cache values
+                    var evenReal = real[evenIdx];
+                    var evenImag = imag[evenIdx];
+                    var rootReal = roots[rootIdx].real;
+                    var rootImag = roots[rootIdx].imag;
+
+                    // Complex multiplication: odd * root
+                    var tempReal = real[oddIdx] * rootReal - imag[oddIdx] * rootImag;
+                    var tempImag = real[oddIdx] * rootImag + imag[oddIdx] * rootReal;
+
+                    // Butterfly operation
+                    real[evenIdx] = evenReal + tempReal;
+                    imag[evenIdx] = evenImag + tempImag;
+                    real[oddIdx] = evenReal - tempReal;
+                    imag[oddIdx] = evenImag - tempImag;
+                }
+            }
+
+            half <<= 1;
+            inv >>= 1;
+        }
+    }
 
     // Input is N=512 PCM samples.
     // Output is intensity of frequencies from 1 to N/2=256.
     public function calcFreq(data:Array<Float>):Array<Float> {
-        // input is filtered by a Hamming window
-        // input values are in bit-reversed order
-        _freqBuffer.resize(n);
-        _calculatedFreq.resize(Std.int(n / 2));
-        for (i in 0..._freqBuffer.length)
-            _freqBuffer[reversed[i]] = { real: data[i] * hamming[i], imag: 0.0 };
+        for (i in 0...n) {
+            var reversedIdx = reversed[i];
+            // workingArray[reversedIdx].set(data[i] * hamming[i], 0.0);
+            realArray[reversedIdx] = data[i] * hamming[i];
+            imagArray[reversedIdx] = 0.0;
+        }
 
-        doFFT(_freqBuffer);
-        // trace('${_freqBuffer[30]} ${_freqBuffer[100]}');
+        // doFFT(workingArray);
+        doFFTSeparate(realArray, imagArray);
 
-        // output values are divided by N
-        // frequencies from 1 to N/2-1 are doubled
-        for (i in 0...Std.int(n/2))
-            _calculatedFreq[i] = 2 * Complex.abs(_freqBuffer[1 + i]) / n;
 
-        // frequency N/2 is not doubled
-        _calculatedFreq[Std.int(n / 2) - 1] = Complex.abs(_freqBuffer[Std.int(n / 2)]) / n;
+        // Calculate magnitudes without creating intermediate Complex objects
+        var halfN = Std.int(n / 2);
+        var invN = 1.0 / n;
 
-        return _calculatedFreq;
+        for (i in 0...halfN) {
+            var real = realArray[1 + i];
+            var imag = imagArray[1 + i];
+
+            // var real = workingArray[1 + i].real;
+            // var imag = workingArray[1 + i].imag;
+            outputFreq[i] = 2 * Math.sqrt(real * real + imag * imag) * invN;
+        }
+
+        // Handle the Nyquist frequency (not doubled)
+        var nyquistReal = realArray[halfN];
+        var nyquistImag = imagArray[halfN];
+        outputFreq[halfN - 1] = Math.sqrt(nyquistReal * nyquistReal + nyquistImag * nyquistImag) * invN;
+
+        return outputFreq;
     }
 }
