@@ -186,7 +186,6 @@ class FFT
     // Input is N=512 PCM samples.
     // Output is intensity of frequencies from 1 to N/2=256.
     public function calcFreq(data:Array<Float>):Array<Float> {
-
         for (i in 0...n) {
             var reversedIdx = reversed[i];
             // workingArray[reversedIdx].set(data[i] * hamming[i], 0.0);
