@@ -15,6 +15,6 @@
   "releasenote": "Added realtime audio checker",
   "version": "0.0.5",
   "dependencies": {
-    "tink_core": ""
+    "tink_core": "2.1.1"
   }
 }
