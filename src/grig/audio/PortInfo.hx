@@ -15,4 +15,5 @@ typedef PortInfo =
     @:optional var defaultLowOutputLatency:Float;
     @:optional var defaultHighInputLatency:Float;
     @:optional var defaultHighOutputLatency:Float;
+    @:optional var description:String;
 }
