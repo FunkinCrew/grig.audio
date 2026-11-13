@@ -100,6 +100,7 @@ const std::vector<double> COMMON_SAMPLE_RATES = {8000, 11025, 16000, 22050, 4410
             auto sampleRates = get_sample_rates_for_port_info(deviceIndex, deviceInfo->maxInputChannels, deviceInfo->maxOutputChannels,
                                                               deviceInfo->defaultLowInputLatency, deviceInfo->defaultLowOutputLatency);
             portInfo->Add(HX_CSTRING("sampleRates"), sampleRates);
+            portInfo->Add(HX_CSTRING("description"), std_string_to_haxe_string(deviceInfo->name));
             portInfos->push(::Dynamic(portInfo));
         }
     }
